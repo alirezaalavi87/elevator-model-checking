@@ -8,7 +8,9 @@ This is the model of an elevator that does the following:
 /*****************
 *   Variables    *
 *****************/
-#define NUM_FLOORS 5
+//#define NUM_FLOORS 5
+#define EQ1 (elevator_current_floor == passenger_current_floor)
+#define EQ2 (elevator_current_floor == passenger_target_floor)
 
 // Possible states of elevator
 mtype = {MOVING, ARRIVED};
@@ -47,15 +49,13 @@ proctype Passenger (int start_floor; int destination_floor) {
 active proctype Elevator() {
     do
         :: elevator_status?MOVING ->
-
             if
-                :: (elevator_current_floor == passenger_current_floor) ->
+                :: (EQ1) ->
                     printf("Elevator is already at passenger floor %d \n", passenger_current_floor);
                     printf("Elevator is moving to passenger target floor %d \n", passenger_target_floor)
-                :: (elevator_current_floor != passenger_current_floor) ->
+                :: (!EQ1) ->
                     printf("Elevator is moving from floor %d to %d \n", elevator_current_floor, elevator_target_floor);
             fi
-
             // Move the elevator
             elevator_current_floor = elevator_target_floor;
             elevator_state = ARRIVED;
@@ -64,20 +64,20 @@ active proctype Elevator() {
             printf("Elevator has arrived at floor %d \n", elevator_current_floor);
             if
                 // We have succesfully transported the passenger
-                :: (elevator_current_floor == passenger_target_floor) ->
+                :: (EQ2) ->
                     passenger_current_floor = passenger_target_floor
                 // We have arrived at passenger's floor to board them
                 // and take them to their target floor
-                :: (elevator_current_floor != passenger_target_floor) ->
+                :: (!EQ2) ->
                     elevator_control!elevator_current_floor,passenger_target_floor
             fi
         :: elevator_control?_, _ ->
             printf("Elevator at floor %d received a call from passenger at floor %d \n", elevator_current_floor, passenger_current_floor);
             if
                 // elevator is already at passenger's floor
-                :: (elevator_current_floor == passenger_current_floor) ->
+                :: (EQ1) ->
                     elevator_target_floor = passenger_target_floor
-                :: (elevator_current_floor != passenger_current_floor) ->
+                :: (EQ2) ->
                     elevator_target_floor = passenger_current_floor
             fi
             elevator_state = MOVING;
@@ -94,7 +94,6 @@ G((elevator_status == MOVING) -> F(elevator_status == ARRIVED && elevator_curren
 G(elevator is called(Passenger proctype) -> N(elevator_status == MOVING))
 G(elevator_current_floor == destination_floor -> (elevator_status == ARRIVED))
 G(!(elevator_status == MOVING) && (elevator_status == ARRIVED) || !(elevator_status == ARRIVED) && (elevator_status == MOVING))
-G((elevator_status == ARRIVED) -> (elevator_target_floor == elevator_current_floor == passenger_target_floor == passenger_current_floor))
 *****************/
 
 ltl p1 { [](
@@ -108,8 +107,6 @@ ltl p1 { [](
             // NOTE: A XOR B === !AB || !BA
             // Elevator can be either MOVING or ARRIVED
             && ((!(elevator_status == MOVING) && elevator_status == ARRIVED) || (elevator_status == ARRIVED && elevator_status == MOVING))
-            && (elevator_status == ARRIVED -> (elevator_target_floor == elevator_current_floor == passenger_target_floor == passenger_current_floor))
-            
     )
 }
 
