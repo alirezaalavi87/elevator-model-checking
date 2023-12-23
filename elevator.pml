@@ -1,7 +1,7 @@
 /**************** 
 This is the model of an elevator that does the following:
 1. go to the called floor
-2. open/close doors (?)
+2. TODO open/close doors (?)
 3. go to the destination floor
 ****************/
 
@@ -10,46 +10,102 @@ This is the model of an elevator that does the following:
 *****************/
 #define NUM_FLOORS 5
 
+// Possible states of elevator
 mtype = {MOVING, ARRIVED};
 
+// Initial state of elevator
 mtype elevator_state = ARRIVED;
-int current_floor = 0;
-int target_floor = 0;
-int passenger_floor = 0;
+int elevator_current_floor = 0;
+int elevator_target_floor = 0;
+int passenger_start_floor = 0;
+int passenger_destination_floor = 0;
 
 /*****************
 *   Channels     *
 *****************/
-chan elevator_control = [0] of {int, int}; // channel for passenger to tell the elevator which floor to go to
-chan elevator_status = [0] of {mtype, int}; // channel that shows status of elevator : STATUS at FLOOR
+
+// channel for passenger to tell the elevator which floor the passenger wants to
+// - to go to. from A to B
+chan elevator_control = [4] of {int, int};
+// channel that shows status of elevator : STATUS at FLOOR
+chan elevator_status = [1] of {mtype};
 
 /*****************
 *   Proctypes    *
 *****************/
-proctype Passenger (int start_floor, int destination_floor) {
-    passenger_floor = start_floor;
-    printf("Passenger at floor %d calls the elevator to go to floor %d \n", start_floor, destination_floor);
-    elevator_control!start_floor, destination_floor; // signal the elevator
+
+// Passenger is at floor [start_floor] and wants to go to floor [destination_floor]
+proctype Passenger (int start_floor; int destination_floor) {
+    passenger_start_floor = start_floor;
+    passenger_destination_floor = destination_floor;
+
+    printf("Passenger at floor %d called the elevator to go to floor %d \n", start_floor, destination_floor);
+
+    elevator_control!passenger_start_floor, passenger_destination_floor; // signal the elevator
 };
 
 active proctype Elevator() {
     do
-        :: elevator_status?MOVING, target_floor ->
-            printf("Elevator is moving from floor %d to %d \n", current_floor, target_floor);
-            current_floor = target_floor;
+        :: elevator_status?MOVING ->
+            printf("Elevator is moving from floor %d to %d \n", elevator_current_floor, elevator_target_floor);
+            if
+                :: (elevator_current_floor == passenger_start_floor) ->
+                    elevator_current_floor = passenger_destination_floor
+                :: (elevator_current_floor != passenger_start_floor) ->
+                    elevator_current_floor = passenger_start_floor
+            fi
+            elevator_target_floor = passenger_destination_floor;
             elevator_state = ARRIVED;
-            elevator_status!ARRIVED, current_floor; // notify that the elevator has arrived
-        :: elevator_status?ARRIVED,_ ->
-            printf("Elevator has arrived at floor %d \n", current_floor);
-        :: elevator_control?passenger_floor, current_floor ->
-            printf("Elevator received a call from floor %d \n", passenger_floor);
+            elevator_status!ARRIVED; // notify that the elevator has arrived
+        :: elevator_status?ARRIVED ->
+            printf("Elevator has arrived at floor %d \n", elevator_current_floor);
+            if
+                :: (elevator_current_floor != passenger_destination_floor) ->
+                    elevator_control!passenger_start_floor,passenger_destination_floor
+            fi
+        :: elevator_control?_, _ ->
+            printf("Elevator at floor %d received a call from passenger at floor %d \n", elevator_current_floor, elevator_target_floor);
+            if
+                :: (elevator_current_floor == passenger_start_floor) ->
+                    elevator_target_floor = passenger_destination_floor
+                :: (elevator_current_floor != passenger_start_floor) ->
+                    elevator_target_floor = passenger_start_floor
+            fi
             elevator_state = MOVING;
-            target_floor = passenger_floor;
-            elevator_status!MOVING, target_floor; // signal the elevator to move
+            elevator_status!MOVING; // signal the elevator to move
     od;
 }
 
+/*****************
+*      LTL       *
+*****************/
+
+/*****************
+G((elevator_status == MOVING) -> F(elevator_status == ARRIVED && elevator_current_floor == elevator_target_floor))
+G(elevator is called(Passenger proctype) -> N(elevator_status == MOVING))
+G(elevator_current_floor == destination_floor -> (elevator_status == ARRIVED))
+G(!(elevator_status == MOVING) && (elevator_status == ARRIVED) || !(elevator_status == ARRIVED) && (elevator_status == MOVING))
+G((elevator_status == ARRIVED) -> (elevator_target_floor == elevator_current_floor == passenger_destination_floor == passenger_start_floor))
+*****************/
+
+ltl p1 { [](
+            // Always if elevator is moving then Finally elevator will arrive at some floor
+            // - and the current of elevator floor will be the target floor
+            ((elevator_status == MOVING) -> <>(elevator_status == ARRIVED && elevator_current_floor == elevator_target_floor))
+            && ((elevator_current_floor == elevator_target_floor) -> ( elevator_status == ARRIVED ))
+            // FIXME: how to say "if proctype Passenger is active"?
+            // Always if the elevator is called (by Passenger) then elevator will start to move
+            //&& (active(Passenger) -> X(elevator_status == MOVING))
+            // NOTE: A XOR B === !AB || !BA
+            // Elevator can be either MOVING or ARRIVED
+            && ((!(elevator_status == MOVING) && elevator_status == ARRIVED) || (elevator_status == ARRIVED && elevator_status == MOVING))
+            
+    )
+}
+
 init {
-    run Passenger(0, 4);
+    // TODO: loop over 0..FLOOR and run Passenger with all possible floor combinations
+        //run Passenger(0, 4);
+        run Passenger(2,3);
 }
 
