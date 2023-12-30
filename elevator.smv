@@ -1,0 +1,82 @@
+-- This is a NuSMV code for modeling a simple elevator that just goes to the floor that it is called to
+-- The elevator has n floors and one button for each floor
+-- The elevator moves up or down depending on the current and requested floor
+-- The elevator stops and opens the door when it reaches the requested floor
+
+MODULE main
+    VAR
+        -- The current floor of the elevator
+        floor : {1, 2, 3, 4, 5};
+        -- The requested floor by the user
+        request : {1, 2, 3, 4, 5};
+        -- The direction of the elevator movement
+        direction : {up, down, stop};
+        -- The status of the elevator door
+        door : {open, close};
+    ASSIGN
+    -- The initial state of the system
+    init(floor) := 1;
+    init(request) := 1;
+    init(direction) := stop;
+    init(door) := open;
+
+    -- The next state of the system
+    next(floor) :=
+        case
+            direction = up & floor != 5 : floor + 1;
+            direction = down & floor != 1 : floor - 1;
+            TRUE: floor;
+        esac;
+    next(request) :=
+        case
+            -- The user can press any button at any time
+            TRUE: {1, 2, 3, 4, 5};
+        esac;
+    next(direction) :=
+        case
+            -- The elevator moves up if the requested floor is higher than the current floor
+            request > floor : up;
+            -- The elevator moves down if the requested floor is lower than the current floor
+            request < floor : down;
+            -- The elevator stops if the requested floor is equal to the current floor
+            request = floor : stop;
+        esac;
+    next(door) :=
+        case
+            -- The elevator opens the door if it stops at the requested floor
+            direction = stop & request = floor : open;
+            -- Elevator door closes as soon as it receives a request
+            direction = stop & request != floor : close;
+            -- The elevator closes the door if it moves from the current floor
+            direction != stop : close;
+        esac;
+
+/-------
+CTL specs
+-------/
+    SPEC
+        -- The elevator should always reach the requested floor eventually
+        AF(request = 1 -> AF floor = 1) &
+        AF(request = 2 -> AF floor = 2) &
+        AF(request = 3 -> AF floor = 3) &
+        AF(request = 4 -> AF floor = 4) &
+        AF(request = 5 -> AF floor = 5) ;
+    -- The elevator should never move beyond the first or the third floor
+
+    SPEC
+        AG(floor in 1..5);
+    -- The elevator should never move when the door is open
+    -- FIXME this is false
+
+    SPEC
+        AG(door = open -> direction = stop);
+
+    -- Always if elevator is moving then Finally elevator will arrive at some floor
+    -- - and the current of elevator floor will be the target floor
+    SPEC
+        AF(direction != stop  -> AF(direction = stop & floor = request));
+     
+    -- NOTE: A XOR B === !AB || !BA
+    -- Elevator can be either MOVING or ARRIVED
+    SPEC
+        AG(direction = up xor direction = down xor direction = stop);
